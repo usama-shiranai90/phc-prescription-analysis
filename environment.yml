@@ -1,0 +1,26 @@
+# Environment for PHC-RxGen prescription generation.
+# Mirrors the working WSL env at /home/syedu/anaconda3/envs/collective-research.
+# Pick the CUDA build that matches your GPU/driver (this one is cu128, RTX A2000).
+#   conda env create -f environment.yml
+name: phc-rx
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - pandas=3.0.*
+  - numpy=2.4.*
+  - pyarrow=24.*
+  - scikit-learn=1.9.*
+  - scipy=1.16.*
+  - matplotlib=3.10.*
+  - sqlalchemy=2.0.*
+  - psycopg2=2.9.*
+  - tqdm
+  - jupyterlab
+  - pip
+  - pip:
+      # CUDA 12.8 wheels; use the index matching your driver, or drop the
+      # --extra-index-url for the CPU build.
+      - --extra-index-url https://download.pytorch.org/whl/cu128
+      - torch==2.10.0
+      - transformers==4.57.1

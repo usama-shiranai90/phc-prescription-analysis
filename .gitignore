@@ -1,0 +1,35 @@
+# Environments
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+*.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Large/raw data, databases & patient data MUST NOT BE UPLOADED
+data/
+archive/
+*.db
+*.sqlite
+*.sqlite3
+*.csv
+*.parquet
+*.xlsx
+
+# Model binaries
+models/
+
+# IDE
+.idea/
+.vscode/
+
+# Clinician annotation: contains patient notes/vitals and the unblinding key
+results/rx_generation/annotation/*.html
+results/rx_generation/annotation/packets.json
+results/rx_generation/annotation/KEY_*.json
+results/rx_generation/annotation/annotations_*.json
+results/
+reports/

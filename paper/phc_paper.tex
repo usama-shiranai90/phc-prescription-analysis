@@ -1,0 +1,194 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage[hidelinks]{hyperref}
+\usepackage[font=small,skip=3pt]{caption}
+\setlength{\textfloatsep}{6pt}
+\setlength{\floatsep}{6pt}
+\setlength{\dblfloatsep}{6pt}
+\setlength{\dbltextfloatsep}{6pt}
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\setcounter{totalnumber}{5}
+\setcounter{topnumber}{4}
+\setcounter{dbltopnumber}{4}
+\renewcommand{\topfraction}{0.98}
+\renewcommand{\dbltopfraction}{0.98}
+\renewcommand{\textfraction}{0.03}
+\renewcommand{\floatpagefraction}{0.80}
+\renewcommand{\dblfloatpagefraction}{0.80}
+\begin{document}
+
+\title{Anatomy of the Electronic Prescription and Machine-Learning Phenotyping of a Community Telemedicine Cohort: Evidence from 46{,}000 Portable Health Clinic Encounters in Rural Bangladesh}
+
+\author{\IEEEauthorblockN{PHC Data Science Study Group}
+\IEEEauthorblockA{\textit{Portable Health Clinic Research Initiative} \\
+\textit{Grameen Communications and Partners}\\
+Dhaka, Bangladesh \\
+\texttt{corresponding.author@example.org}}}
+
+\maketitle
+
+\begin{abstract}
+Community telemedicine programs generate large, real-world screening datasets whose prescription and phenotype structure remains under-analyzed. We conduct a computational study of 46{,}056 Portable Health Clinic (PHC) encounters (36{,}530 patients) collected by community health workers across seven divisions of Bangladesh. We (i) decompose 30{,}016 electronic prescription drug lines into the four classical prescription components (superscription, inscription, subscription, signatura); (ii) quantify concordance between prescribing and measured vitals; (iii) mine drug co-prescription association rules; (iv) derive unsupervised metabolic phenotypes; and (v) benchmark regularized logistic regression, gradient-boosted trees, and a PyTorch multilayer perceptron for predicting hypertension and dysglycemia from routine vitals. Prescriptions average 2.74 drugs (11.7\% polypharmacy $\geq5$), are 86.5\% tablets, and 64.9\% carry meal-timing instructions. Prescribing tracks measurement tightly (antihypertensive$\rightarrow$mean systolic 143.7 vs.\ 120.9~mmHg), yet 49.2\% of measured-hypertensive prescribed encounters received no antihypertensive---a care gap that narrows with severity. Four reproducible phenotypes emerge, and gradient boosting attains ROC-AUC 0.78--0.81, statistically matched by the deep model. All findings are hypothesis-generating and framed against program-population selection bias.
+\end{abstract}
+
+\begin{IEEEkeywords}
+telemedicine, electronic prescription, machine learning, hypertension, association rule mining, global health, Bangladesh
+\end{IEEEkeywords}
+
+\section{Introduction}
+Non-communicable diseases (NCDs) such as hypertension and diabetes are rising rapidly in South Asia, while access to physicians in rural areas remains limited. The Portable Health Clinic (PHC), a telemedicine system developed for unreached communities in Bangladesh, addresses this gap: trained community health workers visit patients with a portable diagnostic kit, record vitals and symptoms on-site, and transmit them to a remote physician who returns a diagnosis and an electronic prescription \cite{ahmed2014targeting,islam2019phc,ahmed2015phc}. Over years of operation the program has accumulated a large corpus of structured screening encounters that is well suited to computational analysis but is rarely mined beyond operational reporting.
+
+This paper treats the PHC record as a data-science object. We ask three questions. First, what is the \emph{structure} of the electronic prescription---its size, dosage forms, dosing frequencies, and instruction completeness---when decomposed into the four pharmacologically classical components? Second, does prescribing behavior \emph{concord} with the measured vitals captured at the same encounter, and where are the care gaps? Third, can \emph{unsupervised and supervised machine learning} extract clinically coherent patient phenotypes and predict NCD status from routine vitals, and do modern deep tabular models outperform classical baselines?
+
+Our contributions are: (1) a reproducible decomposition of 30{,}016 prescription drug lines into superscription/inscription/sub\-scription/signatura with completeness auditing; (2) a prescribing-versus-measurement concordance analysis that surfaces a quantified, severity-dependent hypertension treatment gap; (3) co-prescription association-rule mining and a therapeutic-class network; (4) unsupervised metabolic phenotyping; and (5) a leakage-controlled benchmark of logistic regression, gradient boosting, and a deep MLP, with SHAP-based interpretation. Throughout, we frame results as hypotheses subject to the selection biases inherent to a screening program.
+
+\section{Related Work}
+\textbf{Portable Health Clinic.} The PHC system and its ``GramHealth'' data backbone were introduced to deliver preventive care to unreached communities using appropriate, low-cost sensing \cite{ahmed2014targeting,ahmed2015phc}. A verification study of the health-checkup and tele\-medical-intervention program demonstrated measurable risk-stratification and follow-up value in developing-country settings \cite{nohara2015health}, and later work advanced the platform toward broader tele-healthcare deployment \cite{islam2019phc}. These studies establish the system and its clinical rationale; our work complements them by mining the accumulated prescription and vitals records at scale rather than evaluating the intervention itself.
+
+\textbf{Hypertension epidemiology in Bangladesh.} Nationally representative analyses of the Bangladesh Demographic and Health Survey report adult hypertension prevalence near 27\% with low awareness, treatment, and control rates \cite{khan2021prevalence,chowdhury2016hypertension}, and systematic reviews document a rising secular trend \cite{chowdhury2020trend,gao2021changes}. Our cohort is a program population rather than a general-population sample, so we use these works as external reference points, not as directly comparable denominators.
+
+\textbf{Machine learning on tabular clinical data.} Gradient-boosted decision trees remain a dominant approach for heterogeneous tabular data \cite{chen2016xgboost}, and recent controlled benchmarks show tree ensembles frequently match or exceed deep networks on typical tabular problems \cite{grinsztajn2022why}. We adopt SHAP for model-agnostic interpretation \cite{lundberg2017unified}, Apriori for association-rule mining \cite{agrawal1994fast}, and standard scikit-learn and PyTorch implementations \cite{pedregosa2011scikit,paszke2019pytorch}. To our knowledge this is the first study to apply this combined prescription-anatomy and ML pipeline to a PHC-scale telemedicine cohort.
+
+\section{Dataset and Methods}
+\textbf{Data source.} We analyzed a de-identified operational database export (135 tables) from the PHC program comprising 46{,}056 checkup encounters for 36{,}530 patients across seven administrative divisions. Each encounter records patient demographics, on-site vitals (blood pressure, pulse, SpO\textsubscript{2}, random/post-breakfast glucose, height, weight/BMI, and sparsely hemoglobin), and, where issued, a structured electronic prescription. Prescription drug lines (30{,}016) link to encounters through the prescription--checkup--patient key chain.
+
+\textbf{Units and reference standards.} Glucose was 98.4\% mg/dL with a 1.3\% mmol/L cluster harmonized by $\times18$. Blood pressure is in mmHg. Hypertension was defined as systolic $\geq140$ or diastolic $\geq90$~mmHg (WHO), and dysglycemia by an elevated glucose threshold consistent with post-breakfast testing, the dominant assay. Physiologically implausible extremes were removed with fixed plausibility ranges before analysis; missingness was reported rather than silently dropped.
+
+\textbf{Prescription anatomy.} Each drug line was mapped to the four classical components: \emph{superscription} (prescription-level drug count), \emph{inscription} (drug name and therapeutic class; 206 high-frequency brands mapped to generics/classes covering 79.8\% of volume, remainder flagged \textsc{unknown}), \emph{subscription} (dosage form and duration), and \emph{signatura} (dose frequency from day-part codes and meal-timing).
+
+\textbf{Concordance.} For prescribed encounters we compared mean measured vitals by whether the matching therapeutic class was given, and computed the fraction of measured-hypertensive encounters receiving no antihypertensive, stratified by severity.
+
+\textbf{Association rules.} Apriori \cite{agrawal1994fast} was applied to 10{,}299 prescription baskets at both therapeutic-class and brand granularity (minimum support 0.01), ranked by lift.
+
+\textbf{Phenotyping.} $k$-means ($k{=}4$) was fit on seven standardized first-visit vitals for the 24{,}381 complete-core patients (hemoglobin dropped, 79.4\% missing); PCA and UMAP provided projections. $k{=}4$ was chosen for clinical interpretability although silhouette favored $k{=}2$.
+
+\textbf{Predictive modeling.} For hypertension and dysglycemia we trained regularized logistic regression and histogram gradient boosting, \emph{excluding the defining vital} of each outcome to prevent label leakage. Data were split 75/25 stratified (seed 42); we report ROC-AUC, PR-AUC, and cross-validated AUC, with SHAP \cite{lundberg2017unified} for interpretation. A PyTorch MLP (64$\rightarrow$32, batch-norm, dropout 0.3, positive-weighted BCE, early stopping on validation AUC) was trained on CPU as the deep-learning benchmark \cite{paszke2019pytorch}.
+
+\section{Results}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.80\textwidth]{{{artifact:art_cb4edeaa-d5d7-45d2-9920-b804c20740f7}}}
+\caption{Anatomy of the PHC electronic prescription (30{,}016 drug lines, 10{,}952 prescriptions). (a) Superscription: drugs per prescription. (b--c) Inscription: most-prescribed drugs and therapeutic classes. (d) Subscription: dosage form (log scale). (e--f) Signatura: dose frequency and meal-timing instructions.}
+\label{fig:anatomy}
+\end{figure*}
+
+\subsection{Prescription anatomy}
+The 30{,}016 drug lines span 10{,}952 prescriptions (99.7\% linked to an encounter) and 1{,}367 distinct brands. \emph{Superscription}: a mean of 2.74 drugs per prescription (median 2), with 11.7\% polypharmacy ($\geq5$ drugs). \emph{Inscription}: proton-pump inhibitors (PPIs), vitamins/minerals, and antibiotics dominate (Fig.~\ref{fig:anatomy}c). \emph{Subscription}: 86.5\% of lines are tablets and 48.2\% carry a month-or-continuous duration. \emph{Signatura}: 47.2\% once-daily, 10.7\% three-times-daily, and 64.9\% carry an after-meal instruction. Field completeness was high (drug name 99.6\%, form 98.7\%, dose 93.7\%) but meal-timing was present in only 74.6\% of lines (Table~\ref{tab:anatomy}), the principal documentation gap.
+
+\begin{table}[t]
+\caption{Prescription-component summary and field completeness}
+\label{tab:anatomy}
+\centering
+\small
+\begin{tabular}{@{}lr@{}}
+\toprule
+Component / field & Value \\
+\midrule
+Drug lines / prescriptions & 30{,}016 / 10{,}952 \\
+Mean drugs per prescription & 2.74 (median 2) \\
+Polypharmacy ($\geq5$ drugs) & 11.7\% \\
+Tablet dosage form & 86.5\% \\
+Once-daily dosing & 47.2\% \\
+After-meal instruction & 64.9\% \\
+\midrule
+Completeness: drug name & 99.6\% \\
+Completeness: dosage form & 98.7\% \\
+Completeness: dose & 93.7\% \\
+Completeness: meal-timing & 74.6\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.96\textwidth]{{{artifact:art_52d9d953-e9c3-48f9-8272-bfda4ce90304}}}
+\caption{Therapeutic-class prescribing and concordance with measured vitals. (a) Class reach among 10{,}268 prescribed encounters. (b) Prescribing--measurement concordance: mean systolic BP and glucose by whether the matching class was prescribed. (c) Antihypertensive treatment gap narrows from Stage-1 to Stage-2 hypertension.}
+\label{fig:classes}
+\end{figure*}
+
+\subsection{Prescribing--measurement concordance and care gap}
+Prescribing tracked measured physiology tightly. Encounters receiving an antihypertensive had a mean systolic BP of 143.7~mmHg versus 120.9~mmHg for those that did not; antidiabetic prescriptions corresponded to mean glucose 272.1 versus 116.0~mg/dL (Fig.~\ref{fig:classes}b). This internal consistency supports data integrity. Nonetheless, among measured-hypertensive prescribed encounters, 49.2\% received \emph{no} antihypertensive; the gap narrowed with severity, from 49.9\% at Stage-1 (140--159~mmHg) to 28.6\% at Stage-2 ($\geq160$~mmHg) (Fig.~\ref{fig:classes}c). A comparable 46.9\% gap was observed for dysglycemia. The denominator is restricted to encounters with a prescription record, so the absolute gap should be read as within-prescribed-encounters rather than population-level under-treatment.
+
+\subsection{Drug co-prescription association rules}
+Apriori mining of 10{,}299 baskets yielded 17 therapeutic-class and 18 brand-level rules. The strongest class associations centered on gastro-protective and musculoskeletal co-prescribing: Calcium/Vit-D~$+$~PPI~$\rightarrow$~NSAID (confidence 0.25, lift 2.43$\times$); NSAID~$\leftrightarrow$~H2-blocker (0.22, 2.19$\times$); NSAID~$\leftrightarrow$~Calcium/Vit-D (0.36, 2.08$\times$); and Antacid~$\rightarrow$~PPI (0.37, 1.56$\times$). In the therapeutic-class network (Fig.~\ref{fig:network}), the PPI node is the central hub, consistent with routine gastro-protective co-prescription alongside analgesics and supplements.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\columnwidth]{{{artifact:art_eff6dd65-e589-4f01-bd61-a934c2396c60}}}
+\caption{Therapeutic-class co-prescription network (edge width $\propto$ lift, node size $\propto$ frequency). PPI is the central hub.}
+\label{fig:network}
+\end{figure}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.36\textwidth]{{{artifact:art_e9a3e7c0-000f-4346-a2b3-a44acbf06bd7}}}
+\caption{Unsupervised metabolic phenotyping ($k$-means, $k{=}4$, on 7 standardized first-visit vitals, $n{=}24{,}381$). (a) UMAP; (b) PCA colored by glucose; (c) phenotype vital signatures ($z$-scores); (d) phenotype prevalence.}
+\label{fig:pheno}
+\end{figure*}
+
+\subsection{Unsupervised metabolic phenotyping}
+Four reproducible phenotypes emerged (Fig.~\ref{fig:pheno}): \emph{Young-lean} (42.9\%; age 32, BMI 20, BP 108/70), \emph{Younger-high-BMI} (35.0\%; age 32, BMI 25, BP 122/82), \emph{Older-hypertensive} (18.2\%; age 55, BP 144/88), and \emph{Dysglycemic} (4.0\%; glucose 307, age 49). PCA's first component (31.6\% variance) is a blood-pressure/age axis; the dysglycemic group separates along the glucose direction. Although silhouette favored $k{=}2$, the four-cluster solution is clinically more actionable, isolating the older-hypertensive and dysglycemic risk groups that dominate the prescribing signal.
+
+\subsection{Predictive modeling and deep learning}
+With the defining vital excluded to prevent leakage, models predicted NCD status from routine vitals at clinically useful discrimination (Table~\ref{tab:ml}; Fig.~\ref{fig:ml}). For hypertension, gradient boosting reached ROC-AUC 0.780 (PR-AUC 0.501) versus logistic 0.769; for dysglycemia, 0.805 versus 0.746. SHAP attributed dominant importance to age, followed by BMI, pulse, and SpO\textsubscript{2}. Calibration curves lay below the diagonal, an expected consequence of class-weighting that inflates predicted probabilities; probabilities should be recalibrated before any operational use.
+
+The PyTorch MLP matched the tree ensemble rather than beating it (hypertension AUC 0.778, dysglycemia 0.799; Fig.~\ref{fig:dl}), consistent with reports that tree models remain strong on tabular data \cite{grinsztajn2022why}. A regression head predicting polypharmacy count from vitals was essentially uninformative ($R^2{=}0.015$, MAE 1.15 drugs)---an honest negative indicating that prescription burden is not recoverable from vitals alone.
+
+\begin{table}[t]
+\caption{Predictive performance (test $n\approx8{,}100$; ROC-AUC)}
+\label{tab:ml}
+\centering
+\small
+\begin{tabular}{@{}lccc@{}}
+\toprule
+Outcome & Logistic & Grad.\ Boost & Deep MLP \\
+\midrule
+Hypertension & 0.769 & \textbf{0.780} & 0.778 \\
+Dysglycemia & 0.746 & \textbf{0.805} & 0.799 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.33\textwidth]{{{artifact:art_abd184e4-a68c-4333-bfa3-9dd447f39ec8}}}
+\caption{Predictive models for hypertension and dysglycemia (defining vital excluded; test $n\approx8{,}100$). ROC (a,d), calibration (b,e), and gradient-boosting SHAP importance (c,f).}
+\label{fig:ml}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.24\textwidth]{{{artifact:art_83a593e6-a4e8-4056-aadf-3153c89d2c00}}}
+\caption{Deep tabular MLP (PyTorch, CPU): training/validation curves (a,b,d,e) and benchmark vs classical models (c,f).}
+\label{fig:dl}
+\end{figure*}
+
+\section{Discussion}
+Three findings stand out. First, the electronic prescription is highly structured and largely complete, making it a viable substrate for automated pharmacovigilance and care-quality auditing; meal-timing documentation (74.6\%) is the clearest target for form-level improvement. Second, prescribing concordance with measured vitals is strong, yet a substantial within-encounter treatment gap persists for hypertension and dysglycemia and narrows with severity---a pattern consistent with clinicians prioritizing the most abnormal cases, and a candidate target for decision support. Third, routine vitals carry real predictive signal for NCD status (AUC 0.78--0.81), but deep learning offers no advantage over gradient boosting on this tabular problem, echoing the broader literature \cite{grinsztajn2022why}.
+
+These results align directionally with national evidence of high, under-treated hypertension in Bangladesh \cite{khan2021prevalence,chowdhury2020trend}, suggesting operational telemedicine data can serve as a continuously updating epidemiological sensor.
+
+\section{Limitations}
+This is a program (worksite/camp) population, not a general-population sample, so prevalences are not directly comparable to survey denominators and are subject to self-selection into screening. The design is cross-sectional and single-visit, precluding causal inference. Age is year-precision; hemoglobin and cholesterol are sparse; brand-to-generic mapping covers 79.8\% of volume with an \textsc{unknown} tail; and the care-gap denominator is restricted to prescribed encounters. Models discriminate well but are uncalibrated under class-weighting, and the GPU was unavailable (CPU-only training). All findings are hypothesis-generating and require prospective, adjusted confirmation.
+
+\section{Conclusion}
+Treating a community telemedicine archive as a data-science object, we decomposed 30{,}016 electronic prescriptions, quantified a severity-dependent hypertension treatment gap, mined co-prescription structure, derived four metabolic phenotypes, and benchmarked classical and deep predictors of NCD status. The pipeline turns routinely captured PHC records into actionable care-quality and epidemiological hypotheses, and is directly reusable as new encounters accrue. Future work should add longitudinal follow-up, confounder-adjusted association testing, probability recalibration, and prospective evaluation of a treatment-gap decision-support prompt.
+
+\section*{Reproducibility and Ethics}
+Analyses used de-identified operational data. Figures and tables were produced by a scripted, seed-fixed pipeline; prescription mapping, model configurations, and plausibility filters are archived as artifacts to support replication.
+
+\bibliographystyle{IEEEtran}
+{\footnotesize
+\setlength{\IEEEilabelindent}{2pt}
+\bibliography{refs}}
+
+\end{document}
