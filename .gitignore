@@ -33,3 +33,6 @@ results/rx_generation/annotation/KEY_*.json
 results/rx_generation/annotation/annotations_*.json
 results/
 reports/
+
+# Papers/Drafts
+paper/

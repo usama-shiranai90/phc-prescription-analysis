@@ -1,19 +1,17 @@
 # PHC Prescription Analysis
 
 Analysis, modeling, and (upcoming) deep-learning work on the Portable Health Clinic (PHC)
-`gramweb_ghealth` dataset — prescription generation, prediction, and recommendation.
+dataset — prescription generation, prediction, and recommendation.
 
 ## Core dataset
 
-- **[data/raw/schema-only-gphc-postgreSQL.sql](data/raw/schema-only-gphc-postgreSQL.sql)** — canonical
-  schema (PostgreSQL DDL, `gramweb_ghealth`, 135 tables) for the PHC database. Treat this as the
-  reference schema for any new pipeline, migration, or feature-engineering work.
-- **[data/raw/phc.db](data/raw/phc.db)** — SQLite load of the same database (from a MySQL/phpMyAdmin
-  dump, 135 tables, 709,860 rows; see [load_log.txt](data/raw/load_log.txt) and
-  [db_manifest.csv](data/raw/db_manifest.csv) for load details and per-table row counts).
-- **[docs/data_dictionary.md](docs/data_dictionary.md)** — entity relationships, join keys, and
+The core dataset consists of the PHC database (which is excluded from this repository for privacy and security reasons).
+
+- **Data Dictionary**: [docs/data_dictionary.md](docs/data_dictionary.md) — entity relationships, join keys, and
   clinical variable definitions/units for the analysis-relevant subgraph
   (patients → checkups → prescriptions → drugs/ICD-10/complaints).
+
+*(Note: Raw database files, SQL dumps, patient data, and specific schema details are not tracked in this repository.)*
 
 ## Prescription generation (PHC-RxGen)
 
@@ -37,48 +35,33 @@ against the WHO GHO API, and a local-LLM prescription baseline.
 
 > No clinical text leaves the machine: Hugging Face supplies model weights and
 > the ICD reference, inference is local GPU, and Ollama serves models on the
-> Windows host. The only outbound call is to the WHO GHO API, which downloads
+> host machine. The only outbound call is to the WHO GHO API, which downloads
 > population statistics and transmits no patient data.
 
-The live Postgres server (`gphc-fix`, schema `gramweb_ghealth`) runs on the
-**Windows host** and its `pg_hba.conf` permits loopback only, so the extract
-step runs from Windows and the WSL training env consumes a frozen snapshot in
-`data/interim/` → `data/processed/`.
+The data extraction step connects to the database locally and generates a frozen snapshot in
+`data/interim/`, which is then processed into `data/processed/` for model training.
 
 ## Layout
 
 ```
-data/
-  raw/         Schema + original/loaded database, load metadata (immutable inputs)
-  interim/     Frozen CSV extract from Postgres (src/sql/extract.sql output)
-  processed/   Cleaned analysis tables + rxgen_* model inputs, vocab, norm stats (parquet/json)
-  reference/   Lookup/reference tables (drug_reference.csv)
-models/        Trained model checkpoints (hier_transformer.pt, ...)
-results/       Analysis outputs (csv/png), grouped by study:
-  cohort/              Cohort profile, missingness, data quality, vitals
-  prescribing_patterns/ Rx anatomy, therapeutic classes, co-prescription, association rules
-  epidemiology/        Diagnosis, geographic & temporal prevalence, phenotypes
-  who_indicators/      WHO/INRUD prescribing indicators, AWaRe, audit & medication-safety scores
-  clustering/          Patient clustering outputs
-  modeling/            ML/DL metrics, ensembles, model comparison, SHAP
-reports/       Generated analysis reports (md + html)
-paper/         Manuscript draft (phc_paper.tex/.pdf, refs.bib)
-docs/          Data dictionary, open questions
+data/          (Excluded) Raw databases, CSV extracts, and cleaned analysis tables
+models/        (Excluded) Trained model checkpoints
+results/       (Excluded) Analysis outputs (csv/png), grouped by study
+reports/       (Excluded) Generated analysis reports (md + html)
+docs/          Data dictionary, methodology, and open questions
 notebooks/     Exploratory notebooks
 src/
-  sql/         Postgres profiling + frozen-extract SQL
+  sql/         Database profiling and extract SQL
   phcrx/       PHC-RxGen package: preprocess, data, model, train, baselines,
                metrics, report, predict, diagnose, era_shift
     nlp/       Clinical NLP services: glossary, icd_index, icd_code, ncd,
                llm_rx, ollama_client
-archive/       Superseded/duplicate exports (backup zips, prior session & plan JSON exports)
 ```
 
 ## Environment
 
-Modelling runs in the WSL Ubuntu conda env
-`/home/syedu/anaconda3/envs/collective-research` (Python 3.13, PyTorch 2.10
-+cu128, CUDA on an RTX A2000 6GB). `environment.yml` captures an equivalent
+Modelling runs in a conda environment
+(Python 3.13, PyTorch 2.10, CUDA). `environment.yml` captures an equivalent
 spec for rebuilding elsewhere:
 
 ```bash
