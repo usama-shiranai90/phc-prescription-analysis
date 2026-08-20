@@ -1,69 +1,70 @@
 # PHC Prescription Analysis
 
-Analysis, modeling, and (upcoming) deep-learning work on the Portable Health Clinic (PHC)
-dataset — prescription generation, prediction, and recommendation.
+Analysis, modeling, and deep-learning pipeline for the Portable Health Clinic (PHC) dataset — focusing on prescription generation, clinical prediction, and recommendation systems.
 
-## Core dataset
+> **Privacy Notice**: This is a public repository. All raw database files, private database snapshots/dumps, connection credentials, internal schema names, hostnames, and sensitive patient records are strictly excluded from version control for privacy and security reasons.
 
-The core dataset consists of the PHC database (which is excluded from this repository for privacy and security reasons).
+---
 
-- **Data Dictionary**: [docs/data_dictionary.md](docs/data_dictionary.md) — entity relationships, join keys, and
-  clinical variable definitions/units for the analysis-relevant subgraph
-  (patients → checkups → prescriptions → drugs/ICD-10/complaints).
+## Overview
 
-*(Note: Raw database files, SQL dumps, patient data, and specific schema details are not tracked in this repository.)*
+This repository contains the machine learning and clinical NLP codebase for analyzing prescription patterns, generating multi-modal drug recommendations, and standardizing clinical text:
 
-## Prescription generation (PHC-RxGen)
+- **PHC-RxGen**: Multi-modal prescription generation model using char-CNN + BiLSTM for symptom text, tokenized vitals, patient history GRU, Transformer fusion, and autoregressive Transformer decoders for structured drug order emission.
+- **Clinical NLP Services**: Local-only NLP pipeline including ICD-10 automated coding (SapBERT + hybrid retrieval + MedGemma adjudication), site glossary verification, WHO NCD risk stratification against WHO GHO benchmarks, and local LLM baselines.
 
-Deep multi-modal prescription generation — char-CNN + BiLSTM over symptom text,
-per-vital tokens, a history GRU, Transformer fusion, and an autoregressive
-Transformer decoder emitting drug orders with structured attributes.
+---
 
-- **Method, data findings, and limitations**: [docs/prescription_generation.md](docs/prescription_generation.md)
-- **Code**: [src/phcrx/](src/phcrx/) · **SQL extract**: [src/sql/](src/sql/)
-- **Results**: `results/rx_generation/` (`RESULTS.md`, figures, metrics JSON)
-
-## Clinical NLP services (Hugging Face · Ollama · ICD-10 · WHO NCD)
-
-Local-only NLP layer that fills the corpus's structural gaps: ICD-10 auto-coding
-of symptom text (SapBERT + hybrid retrieval + medgemma adjudication), a
-verified site abbreviation glossary, WHO NCD risk stratification benchmarked
-against the WHO GHO API, and a local-LLM prescription baseline.
-
-- **Method and limitations**: [docs/clinical_nlp_services.md](docs/clinical_nlp_services.md)
-- **Code**: [src/phcrx/nlp/](src/phcrx/nlp/) · **Results**: `results/rx_generation/nlp/`
-
-> No clinical text leaves the machine: Hugging Face supplies model weights and
-> the ICD reference, inference is local GPU, and Ollama serves models on the
-> host machine. The only outbound call is to the WHO GHO API, which downloads
-> population statistics and transmits no patient data.
-
-The data extraction step connects to the database locally and generates a frozen snapshot in
-`data/interim/`, which is then processed into `data/processed/` for model training.
-
-## Layout
+## Repository Layout
 
 ```
-data/          (Excluded) Raw databases, CSV extracts, and cleaned analysis tables
-models/        (Excluded) Trained model checkpoints
-results/       (Excluded) Analysis outputs (csv/png), grouped by study
-reports/       (Excluded) Generated analysis reports (md + html)
-docs/          Data dictionary, methodology, and open questions
-notebooks/     Exploratory notebooks
+data/          (Excluded from git) Raw data extracts, CSVs, and processed Parquet files
+models/        (Excluded from git) Trained model checkpoints and serialized weights
+results/       Analysis outputs, metrics JSON, and evaluation figures
+reports/       Generated analysis reports (Markdown & HTML)
+docs/          Data dictionary, methodology specifications, and research documentation
+notebooks/     Exploratory research and analysis notebooks
 src/
-  sql/         Database profiling and extract SQL
-  phcrx/       PHC-RxGen package: preprocess, data, model, train, baselines,
-               metrics, report, predict, diagnose, era_shift
-    nlp/       Clinical NLP services: glossary, icd_index, icd_code, ncd,
-               llm_rx, ollama_client
+  sql/         Sanitized SQL extraction and profiling queries (generic interfaces)
+  phcrx/       PHC-RxGen core package (preprocessing, modeling, training, evaluation)
+    nlp/       Clinical NLP sub-package (ICD-10 coding, WHO NCD, Ollama LLM integration)
 ```
 
-## Environment
+---
 
-Modelling runs in a conda environment
-(Python 3.13, PyTorch 2.10, CUDA). `environment.yml` captures an equivalent
-spec for rebuilding elsewhere:
+## Core Dataset & Privacy Controls
+
+- **Data Dictionary**: [`docs/data_dictionary.md`](docs/data_dictionary.md) — High-level conceptual entity relationships and clinical variable definitions (Patients → Checkups → Prescriptions → Drugs / ICD-10 / Complaints).
+- **Data Pipeline**: Raw database extraction is performed locally against an isolated database instance to output anonymized interim CSVs (`data/interim/`), which are subsequently cleaned into Parquet features (`data/processed/`) for model training.
+- **Strict Anonymization**: No private database schema names, raw SQL dumps, database credentials, host IP addresses, or patient identifiers are stored or committed in this repository.
+
+---
+
+## Key Modules & Documentation
+
+| Component | Description | Reference & Code |
+| :--- | :--- | :--- |
+| **Prescription Generation** | Deep multi-modal Rx generation architecture & evaluation results | [`docs/prescription_generation.md`](docs/prescription_generation.md) • [`src/phcrx/`](src/phcrx/) |
+| **Clinical NLP Services** | Local GPU ICD-10 coding, WHO NCD risk profiling & local LLM baselines | [`docs/clinical_nlp_services.md`](docs/clinical_nlp_services.md) • [`src/phcrx/nlp/`](src/phcrx/nlp/) |
+| **SQL Extract Interface** | Data extraction queries and profiling logic | [`src/sql/`](src/sql/) |
+| **Results & Metrics** | Comprehensive evaluation metrics, tables, and figures | `results/rx_generation/` |
+
+---
+
+## Data Privacy & Local Execution Security
+
+> **Zero External Transmission of Clinical Data**
+> - All model weights (Hugging Face / SapBERT) and LLM inference (Ollama) run 100% locally on host GPU/CPU hardware.
+> - The only external HTTP request is to the public WHO GHO API to fetch static population reference stats; no user or clinical data is ever transmitted externally.
+
+---
+
+## Environment Setup
+
+Modelling runs in a Conda environment (Python 3.13, PyTorch, CUDA). Recreate the environment using `environment.yml`:
 
 ```bash
 conda env create -f environment.yml
+conda activate phc-rxgen
 ```
+
