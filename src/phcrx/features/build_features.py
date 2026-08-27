@@ -26,7 +26,9 @@ Design rules that the downstream importance analysis depends on:
 """
 from __future__ import annotations
 
+import argparse
 import json
+import pathlib
 import re
 import unicodedata
 
@@ -597,11 +599,53 @@ def _build_targets(enc: pd.DataFrame, is_train: np.ndarray):
 
 
 # ---------------------------------------------------------------------------
+# Temporal split boundaries, matching src/phcrx/temporal/class_temporal.py so a
+# feature matrix built here is directly comparable with that evaluation.
+TEMPORAL_TRAIN_END, TEMPORAL_VAL_END = 2015, 2016
+
+
+def temporal_split(enc: pd.DataFrame) -> pd.Series:
+    """train <=2015 / val 2016 / test >=2017, derived from the year column."""
+    yr = pd.to_numeric(enc["year"], errors="coerce")
+    return pd.Series(
+        np.where(yr <= TEMPORAL_TRAIN_END, "train",
+                 np.where(yr <= TEMPORAL_VAL_END, "val", "test")),
+        index=enc.index)
+
+
 def main() -> None:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--split", choices=["patient", "temporal"], default="patient",
+                    help="which split defines the fitting mask. Every transform "
+                         "in this module is fitted on the TRAIN rows of this "
+                         "split, so a temporal evaluation needs --split temporal "
+                         "or the features have already seen later-era rows.")
+    ap.add_argument("--out", default=None,
+                    help="output parquet; defaults to features.parquet for "
+                         "patient and features_temporal.parquet otherwise")
+    args = ap.parse_args()
+
     enc = pd.read_parquet(PROCESSED / "rxgen_encounters.parquet").reset_index(drop=True)
+    if args.split == "temporal":
+        enc = enc.copy()
+        enc["split"] = temporal_split(enc).values
+        yr = pd.to_numeric(enc["year"], errors="coerce")
+        # Assert the eras really are disjoint before anything is fitted.
+        for a, b in (("train", "val"), ("val", "test"), ("train", "test")):
+            ya, yb = yr[enc["split"] == a], yr[enc["split"] == b]
+            if len(ya) and len(yb):
+                assert ya.max() < yb.min(), f"{a}/{b} eras overlap"
     is_train = (enc["split"] == "train").to_numpy()
-    print(f"encounters={len(enc)}  train={is_train.sum()}  "
+    out_path = (pathlib.Path(args.out) if args.out
+                else (OUT_PARQUET if args.split == "patient"
+                      else OUT_PARQUET.with_name("features_temporal.parquet")))
+    print(f"split={args.split}  encounters={len(enc)}  train={is_train.sum()}  "
           f"val={(enc['split'] == 'val').sum()}  test={(enc['split'] == 'test').sum()}")
+    if args.split == "temporal":
+        yr = pd.to_numeric(enc["year"], errors="coerce")
+        print("   era bounds: " + "  ".join(
+            f"{s}=[{int(yr[enc['split']==s].min())},{int(yr[enc['split']==s].max())}]"
+            for s in ("train", "val", "test") if (enc["split"] == s).any()))
 
     T, tmeta, class_mat = _build_targets(enc, is_train)
     print(f"targets built: {sum(c.startswith('y_') for c in T.columns)} columns")
@@ -632,10 +676,12 @@ def main() -> None:
         enc[["prescription_id", "user_id", "split", "checkup_date"]].reset_index(drop=True),
         X, T.drop(columns=["prescription_id"]),
     ], axis=1)
-    out.to_parquet(OUT_PARQUET, index=False)
+    out.to_parquet(out_path, index=False)
 
     counts = pd.Series(fam).value_counts().to_dict()
-    OUT_FAMILIES.write_text(json.dumps({
+    fam_path = (OUT_FAMILIES if args.split == "patient"
+                else OUT_FAMILIES.with_name("feature_families_temporal.json"))
+    fam_path.write_text(json.dumps({
         "families": fam,
         "family_counts": counts,
         "categorical_features": cat_meta,
@@ -653,8 +699,8 @@ def main() -> None:
     print(f"\nfeatures: {X.shape[1]} columns")
     for k, v in sorted(counts.items(), key=lambda kv: -kv[1]):
         print(f"  {k:<12} {v:4d}")
-    print(f"\nwrote {OUT_PARQUET}  shape={out.shape}")
-    print(f"wrote {OUT_FAMILIES}")
+    print(f"\nwrote {out_path}  shape={out.shape}")
+    print(f"wrote {fam_path}")
     print("\ntop drug classes (targets):")
     for c in tmeta["top_classes"]:
         print(f"  {c:<34} prevalence={tmeta['class_prevalence'][c]:.3f}")

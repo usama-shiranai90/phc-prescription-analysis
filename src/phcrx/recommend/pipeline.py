@@ -110,8 +110,39 @@ def _val_score(kind, Yva, Pva, tail):
     return set_metrics(Yva, Pva >= thr, tail)["micro_f1"], thr
 
 
+
 # ---------------------------------------------------------------------------
-def fit_component(comp, df, FF, arms, verbose=True) -> dict:
+TEMPORAL_TRAIN_END, TEMPORAL_VAL_END = 2015, 2016
+
+
+def _temporal_val_score(comp, df, FF, arm, mk_est, tail_fn):
+    """Fit on <=2015, score on 2016. Never touches the >=2017 test era.
+
+    The patient-split criterion cannot see forward-in-time degradation: `all`
+    beats `text_raw` on a random shuffle and loses to it by 0.099 a year later.
+    This is the criterion that can.
+    """
+    yr = pd.to_numeric(df["year"], errors="coerce").to_numpy()
+    mask = comp.mask if comp.mask is not None else np.ones(len(df), bool)
+    tr = np.where(mask & (yr <= TEMPORAL_TRAIN_END))[0]
+    va = np.where(mask & (yr > TEMPORAL_TRAIN_END) & (yr <= TEMPORAL_VAL_END))[0]
+    if len(tr) < 200 or len(va) < 50:
+        return None, None
+    Ytr, Yva = _targets(comp, tr), _targets(comp, va)
+    if comp.kind == "multiclass":
+        classes = list(comp.labels)
+        c2i = {c: i for i, c in enumerate(classes)}
+        Ytr = np.array([c2i[v] for v in Ytr])
+        Yva = np.array([c2i[v] for v in Yva])
+    tail = tail_fn(Ytr)
+    pipe = make_pipeline(arm, mk_est(), FF)
+    pipe.fit(df.iloc[tr], Ytr)
+    Pva = _proba(pipe, df.iloc[va], comp.kind)
+    return _val_score(comp.kind, Yva, Pva, tail)[0], len(va)
+
+
+def fit_component(comp, df, FF, arms, verbose=True,
+                  select_on: str = "val") -> dict:
     idx = split_index(df, comp.mask)
     Xs = {s: df.iloc[idx[s]] for s in ("train", "val", "test")}
     Ys = {s: _targets(comp, idx[s]) for s in ("train", "val", "test")}
@@ -145,12 +176,33 @@ def fit_component(comp, df, FF, arms, verbose=True) -> dict:
                   f"({time.time()-t0:.0f}s)", flush=True)
 
     tab = pd.DataFrame(rows)
-    best = tab.loc[tab["val_score"].idxmax(), "feature_set"]
+
+    # Forward-in-time criterion: fit <=2015, score 2016. Always measured and
+    # recorded so the two criteria can be compared even when selecting on val.
+    tail_fn = ((lambda Y: tail_labels(Y)) if comp.kind == "multilabel"
+               else (lambda Y: np.array([0])))
+    tscores = {}
+    for arm in arms:
+        s, n = _temporal_val_score(comp, df, FF, arm, mk_est, tail_fn)
+        tscores[arm] = s
+        if verbose and s is not None:
+            print(f"    {arm:16s} temporal-val={s:+.4f} (n={n})", flush=True)
+    tab["temporal_val_score"] = tab["feature_set"].map(tscores)
+
+    key = ("temporal_val_score"
+           if select_on == "temporal" and tab["temporal_val_score"].notna().any()
+           else "val_score")
+    if select_on == "temporal" and key == "val_score" and verbose:
+        print("    !! temporal criterion unavailable for this component; "
+              "falling back to patient-split val")
+    best = tab.loc[tab[key].idxmax(), "feature_set"]
     dep = tab[tab["deployable"]]
-    best_dep = dep.loc[dep["val_score"].idxmax(), "feature_set"]
+    best_dep = dep.loc[dep[key].idxmax(), "feature_set"]
     if verbose:
-        print(f"    -> winner: {best}   (best deployable: {best_dep}, "
-              f"val {dep['val_score'].max():+.4f} vs {tab['val_score'].max():+.4f})")
+        alt = tab.loc[tab["val_score"].idxmax(), "feature_set"]
+        note = "" if alt == best else f"   (patient-split val would pick '{alt}')"
+        print(f"    -> winner: {best}  [criterion={key}]   "
+              f"(best deployable: {best_dep}){note}")
 
     # --- hyper-parameter, on VAL, for the winning feature set only ---------
     hp_rows = []
@@ -214,6 +266,7 @@ def fit_component(comp, df, FF, arms, verbose=True) -> dict:
     return {
         "component": comp.name, "kind": comp.kind,
         "feature_set": best, "best_deployable": best_dep,
+        "select_on": select_on, "temporal_val_scores": tscores,
         "hyperparam": {grid[0][0]: best_hp},
         "threshold": win["threshold"], "calibration": win["calibration"],
         "threshold_dep": None if dep_res is None else dep_res["threshold"],
@@ -238,12 +291,18 @@ def main() -> None:
     ap.add_argument("--label-space", default="class46",
                     choices=("class46", "cat89"))
     ap.add_argument("--tag", default="")
+    ap.add_argument("--features", choices=["patient", "temporal"],
+                    default="patient",
+                    help="which engineered feature matrix to consume. 'patient' (features.parquet) leaks for temporal work; 'temporal' (features_temporal.parquet) is fitted on <=2015 only.")
+    ap.add_argument("--select-on", choices=["val", "temporal"],
+                    default="val",
+                    help="criterion for choosing the feature set. 'val' uses the patient-split validation rows and cannot see forward-in-time degradation; 'temporal' fits <=2015 and scores 2016.")
     args = ap.parse_args()
 
     t0 = time.time()
     import joblib
 
-    df, FF = load_frame()
+    df, FF = load_frame(args.features)
     comps = build_components(df, label_space=args.label_space)
     names = args.components or list(comps)
     print(f"corpus: {len(df)} encounters  "
@@ -257,7 +316,8 @@ def main() -> None:
         comp = comps[name]
         print(f"[{name}] kind={comp.kind} labels={comp.n_labels} "
               f"headline={comp.headline}", flush=True)
-        res = fit_component(comp, df, FF, args.arms)
+        res = fit_component(comp, df, FF, args.arms,
+                            select_on=args.select_on)
         sel_rows += res["selection"]
 
         tag = f"{name}{args.tag}"

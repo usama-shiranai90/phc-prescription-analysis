@@ -340,7 +340,7 @@ which is why they were included.
 > it.
 >
 > **Two qualifications are load-bearing.** (1) The *feature set* matters more
-> than the split: the `all` arm falls twice as far (−48.1%) and lands almost on
+> than the split: the `all` arm falls further (−37.6% era-clean) and closer to
 > the prior, so feature sets must be selected on a **temporal** validation split,
 > not a random one. (2) **Set-level agreement still collapses** for both arms —
 > Jaccard and exact-match fall *below* the always-empty floor and tail-macro-F1

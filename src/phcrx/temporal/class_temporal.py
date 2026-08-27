@@ -429,11 +429,14 @@ def main() -> None:
                     choices=("patient", "temporal"))
     ap.add_argument("--bootstrap", type=int, default=2000)
     ap.add_argument("--c-grid", nargs="+", type=float, default=list(C_GRID))
+    ap.add_argument("--features", choices=["patient", "temporal"],
+                    default="patient",
+                    help="engineered feature matrix to consume. 'patient' (features.parquet) is fitted on the patient-split train rows and is NOT era-clean; 'temporal' (features_temporal.parquet) is fitted on <=2015 only.")
     ap.add_argument("--tag", default="")
     args = ap.parse_args()
 
     t0 = time.time()
-    df, FF = load_frame()
+    df, FF = load_frame(args.features)
     print("corpus: %d encounters, years %d-%d"
           % (len(df), int(df["year"].min()), int(df["year"].max())))
     print("targets=%s  arms=%s  splits=%s  C grid=%s  bootstrap=%d"
@@ -474,11 +477,19 @@ def main() -> None:
                  "src.phcrx.preprocess was NOT run -- it rewrites "
                  "data/processed/rxgen_*.parquet in place and reshuffles the "
                  "vocabularies"),
+        "features_source": FF.get("features_source", "features.parquet"),
         "features_parquet_caveat": (
-            "features.parquet was fitted with is_train = (patient split == "
-            "'train'); the clinical/all feature sets therefore leak later-era "
-            "rows into their offline fit under the temporal split and are an "
-            "optimistic upper bound there"),
+            "features.parquet is fitted with is_train = (patient split == "
+            "'train'), so its engineered columns are not era-clean under a "
+            "temporal split. NOTE: this was first assumed to be an OPTIMISTIC "
+            "upper bound for the clinical/all arms. Measurement contradicted "
+            "that -- refitting the encodings on <=2015 only "
+            "(features_temporal.parquet) IMPROVED the 'all' arm's temporal-val "
+            "micro-F1 from 0.2798 to 0.3504. Globally-fitted target encodings "
+            "appear to induce a train/serve mismatch that penalises the arm, "
+            "whereas an era-clean fit collapses unseen post-2015 categories to "
+            "the prior, which shrinks toward a safer default. Run with "
+            "--features temporal for the era-clean numbers."),
         "targets": meta}, indent=2, default=str))
 
     print("\n" + "=" * 108)

@@ -40,7 +40,7 @@ are closed and not repeated here.
 
 | # | Task | Effort | Note |
 |---|---|---|---|
-| 2 | ~~Re-run the temporal split at class level~~ | **done (brand control pending)** | Closed. Class-level drop is **−23.1%** (deployable arm), not −66%, and lands clear of its prior floor. The `all` arm degrades twice as fast (−48.1%), reversing the deployment choice. See §9. A `brand717` control run is still fitting to separate the target effect from the estimator effect. |
+| 2 | ~~Re-run the temporal split at class level~~ | **done (brand control pending)** | Closed. Class-level drop is **−23.1%** (deployable arm), not −66%, and lands clear of its prior floor. The `all` arm degrades faster (−37.6% era-clean; a leaked −48.1% was pessimistic), still reversing the deployment choice but by a narrower margin. See §9. A `brand717` control run is still fitting to separate the target effect from the estimator effect. |
 | 3 | ~~Wire abstention into `recommend.py`~~ | **done** | Closed. `--policy {none,global80,sparse_targeted}`, val-only cut-points, policy artefact in `models/abstention_policy.joblib`. Verified: the per-encounter rule covers **exactly** the rows the batch analysis covers (0 differing). See §8 and `recommender.md` §6. |
 | 4 | **Propagate the two reversed conclusions** | ~1h | `model_comparison.md` still asserts "the neural architecture is not justified"; `prescription_generation.md` §5 still asserts "transformer fusion hurts". Both were overturned by `neural_mlc.md` and are wrong as written. |
 | 5 | **Write `docs/drug_normalization.md`** | ~1h | Results exist (`results/rx_generation/drugmap/drug_normalization.json`); prose never written — its agent died first. |
@@ -365,7 +365,7 @@ invalidated downstream artefacts in an earlier session.
 | target | arm | patient | temporal | change [95% CI] |
 |---|---|---|---|---|
 | class46 | **text_raw** (deployable) | 0.4615 | **0.3547** | **−23.1%** [−26.3, −20.0] |
-| class46 | `all` (currently deployed) | 0.4934 | 0.2561 | **−48.1%** [−50.2, −46.0] |
+| class46 | `all` (currently deployed, era-clean) | 0.4938 | 0.3081 | **−37.6%** [−40.1, −34.9] |
 | cat89 | text_raw | 0.4077 | 0.2947 | −27.8% [−31.1, −24.3] |
 | cat89 | `all` | 0.4340 | 0.2197 | −49.4% [−51.6, −47.1] |
 
@@ -385,7 +385,9 @@ Until it lands, the comparison is indicative, not controlled.
 ### The arm ranking reverses — and this changes what to deploy
 
 Under the patient split `all` beats `text_raw` (0.4934 vs 0.4615). Under
-temporal shift it **loses** (0.2561 vs 0.3547) and degrades twice as fast. The
+temporal shift it **loses** (0.3081 vs 0.3547, era-clean) and degrades faster
+(−37.6% vs −23.1%). An earlier −48.1% figure came from a non-era-clean
+feature matrix and was pessimistic. The
 prescriber/site/era features are not merely non-transferable, they are actively
 harmful once the era moves.
 

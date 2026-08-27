@@ -1,5 +1,24 @@
 # The temporal collapse, re-measured at class level with the deployed model
 
+
+> **⚠ Figures on this page for the `all` arm are superseded.** They were
+> computed from `features.parquet`, fitted on the patient-split train rows and
+> therefore **not era-clean**. Refitting the engineered columns on ≤2015
+> (`features_temporal.parquet`, `--features temporal`) gives:
+>
+> | arm | patient | temporal | drop |
+> |---|---|---|---|
+> | `text_raw` | 0.4615 | 0.3547 | **−23.1%** (unchanged — control) |
+> | `all` — leaked | 0.4934 | 0.2561 | −48.1% |
+> | **`all` — era-clean** | 0.4938 | **0.3081** | **−37.6%** [−40.1, −34.9] |
+>
+> The leak was **pessimistic**, not optimistic — the opposite of what was
+> predicted. `text_raw` still wins under temporal shift, but by **0.047, not
+> 0.099**, so the deployment argument rests on a much narrower margin than
+> first reported. Note `all` has the better *tail*-macro under shift (0.0453 vs
+> 0.0336).
+
+
 **Verdict: the published −66% deployability headline is stale, and it is wrong
 in both directions at once.** Measured on the target and the estimator this
 project actually deploys, forward-in-time micro-F1 falls **0.4615 → 0.3547, a

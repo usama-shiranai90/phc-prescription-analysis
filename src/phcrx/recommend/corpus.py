@@ -56,21 +56,43 @@ DRUG_FORM_OTHER = "other"
 # ---------------------------------------------------------------------------
 # frame
 # ---------------------------------------------------------------------------
-def load_frame() -> tuple[pd.DataFrame, dict]:
+def load_frame(features: str = "patient") -> tuple[pd.DataFrame, dict]:
     """Encounters joined to the engineered feature matrix, plus family map.
 
-    The engineered columns come from `data/processed/features.parquet`, which
-    the feature workstream fitted on TRAIN only (TF-IDF vocabulary, char-SVD
-    basis, categorical levels, and leave-one-out site/prescriber target
-    encodings). They are consumed here, never refitted.
+    The engineered columns are fitted upstream by
+    `src.phcrx.features.build_features` on the TRAIN rows of a chosen split --
+    TF-IDF vocabulary, char-SVD basis, categorical levels, and leave-one-out
+    site/prescriber target encodings. They are consumed here, never refitted.
+
+    `features` picks which matrix to consume:
+
+      "patient"  -> features.parquet, fitted on the patient-split train rows.
+                    Correct for patient-split work; **leaks for temporal work**,
+                    because those transforms have already seen post-2016 rows.
+      "temporal" -> features_temporal.parquet, fitted on <=2015 only.
+
+    Using "patient" for a temporal evaluation flatters exactly the feature
+    families (site, prescriber, era) that degrade fastest forward in time.
     """
     enc = pd.read_parquet(PROCESSED / "rxgen_encounters.parquet")
     enc["symptom_text"] = enc["symptom_text"].fillna("").astype(str)
     enc["prescription_id"] = enc["prescription_id"].astype(int)
 
-    feat = pd.read_parquet(PROCESSED / "features.parquet")
+    if features not in ("patient", "temporal"):
+        raise ValueError(f"features must be 'patient' or 'temporal', got {features!r}")
+    fname = "features.parquet" if features == "patient" else "features_temporal.parquet"
+    famname = ("feature_families.json" if features == "patient"
+               else "feature_families_temporal.json")
+    fpath, fampath = PROCESSED / fname, PROCESSED / famname
+    if not fpath.exists():
+        raise SystemExit(
+            f"{fpath} not found. Build it with: "
+            f"python -m src.phcrx.features.build_features --split {features}")
+
+    feat = pd.read_parquet(fpath)
     feat["prescription_id"] = feat["prescription_id"].astype(int)
-    FF = json.loads((PROCESSED / "feature_families.json").read_text())
+    FF = json.loads(fampath.read_text())
+    FF["features_source"] = fname
     eng_cols = [c for c in FF["feature_columns"] if c in feat.columns]
 
     feat = feat.set_index("prescription_id").reindex(enc["prescription_id"])
